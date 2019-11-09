@@ -67,6 +67,8 @@ class DeviceService : public QThread {
     FindDevices *m_pFindDevices;
 
     QList<DeviceMeta> m_devices;
+
+    int m_nTimeout;
 };
 
 QDebug operator<<(QDebug dbg, const DeviceService::DeviceMeta &c);

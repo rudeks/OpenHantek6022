@@ -13,20 +13,19 @@
 
 #include <QDebug>
 
-DeviceService::DeviceService(libusb_context *pContext) : QThread(nullptr), m_pUSBContext(pContext) {
+DeviceService::DeviceService(libusb_context *pContext) : QThread(nullptr), m_pUSBContext(pContext), m_nTimeout(-1) {
     m_pFindDevices = new FindDevices(m_pUSBContext);
 }
 
 DeviceService::~DeviceService() { delete m_pFindDevices; }
 
 std::unique_ptr<USBDevice> DeviceService::waitForAnyDevice(int nTimeout) {
+    m_nTimeout = nTimeout;
+
     start();
 
     UniqueUSBid takeDeviceID = 0L;
     connect(this, &DeviceService::deviceReady, [&](const QString &, UniqueUSBid id) { takeDeviceID = id; });
-
-    if (nTimeout > -1)
-        QTimer::singleShot(nTimeout, this, &QThread::quit);
 
     wait();
 
@@ -41,12 +40,21 @@ std::unique_ptr<USBDevice> DeviceService::waitForAnyDevice(int nTimeout) {
 void DeviceService::run() {
     qDebug() << "DeviceService thread started";
 
+    QTimer timeoutTimer;
+
+    if (m_nTimeout > -1) {
+        timeoutTimer.setSingleShot(true);
+        timeoutTimer.setInterval(m_nTimeout);
+        timeoutTimer.start();
+        connect(&timeoutTimer, &QTimer::timeout, this, &QThread::quit, Qt::DirectConnection);
+    }
+
     QTimer updateTimer;
     updateTimer.setInterval(1000);
     updateTimer.start();
     // Direct connection to use the thread's event loop. Alternatively, this object could be moved to the new thread.
     connect(&updateTimer, &QTimer::timeout, this, &DeviceService::reScanDevices, Qt::DirectConnection);
-    //connect(this, &DeviceService::devices, &updateTimer,
+    // connect(this, &DeviceService::devices, &updateTimer,
     //        &QTimer::stop); // stop update timer as soon as devices are found
 
     connect(this, &DeviceService::devices, this, &DeviceService::processDevices, Qt::DirectConnection);
@@ -67,9 +75,7 @@ QDebug operator<<(QDebug dbg, const DeviceService::DeviceMeta &c) {
     return dbg;
 }
 
-void DeviceService::reScanDevices() {
-    processDevices();
-}
+void DeviceService::reScanDevices() { processDevices(); }
 
 /**
  * @brief Get a list of devices that can be displayed. Does nothing but convert the raw device list to a displayable,

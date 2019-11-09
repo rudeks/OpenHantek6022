@@ -91,7 +91,7 @@ int main(int argc, char *argv[]) {
 
     bool useGLES = false;
     bool useFirstDevice = false;
-
+    int waitForDeviceTimeout = -1;
     {
         QCoreApplication parserApp(argc, argv);
 
@@ -106,9 +106,16 @@ int main(int argc, char *argv[]) {
             "any-device", QCoreApplication::tr("Use the first device that becomes available on USB"));
         p.addOption(useFirstDeviceOption);
 
+        QCommandLineOption waitDeviceTimeout(
+            "any-device-timeout",
+            "For use with --any-device. If timeout is hit (default: 30000ms), select dialog popus up.", "timeout",
+            "30000");
+        p.addOption(waitDeviceTimeout);
+
         p.process(parserApp);
         useGLES = p.isSet(useGlesOption);
         useFirstDevice = p.isSet(useFirstDeviceOption);
+        waitForDeviceTimeout = p.value(waitDeviceTimeout).toInt();
     }
 
 #ifdef __arm__
@@ -152,11 +159,10 @@ int main(int argc, char *argv[]) {
 
     std::unique_ptr<USBDevice> device;
     if (useFirstDevice) {
-
         // Use device service to hang on and wait for device(s). If no device is returned, show the select dialog.
         DeviceService deviceService(context);
         device =
-            deviceService.waitForAnyDevice(30); // Wait 30 seconds and then fallback to the well-known select dialog
+            deviceService.waitForAnyDevice(waitForDeviceTimeout); // Wait 30 seconds and then fallback to the well-known select dialog
 
         if (!device) {
             // Show the normal select dialog if no device was selected automatically
