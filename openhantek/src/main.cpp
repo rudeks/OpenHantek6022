@@ -12,16 +12,16 @@
 #endif
 #include <iostream>
 #ifdef __FreeBSD__
-	#include <libusb.h>
+#include <libusb.h>
 #else
-	#include <libusb-1.0/libusb.h>
+#include <libusb-1.0/libusb.h>
 #endif
 #include <memory>
 
 // Settings
 #include "settings.h"
-#include "viewsettings.h"
 #include "viewconstants.h"
+#include "viewsettings.h"
 
 // DSO core logic
 #include "dsomodel.h"
@@ -45,6 +45,7 @@
 #include "iconfont/QtAwesome.h"
 #include "mainwindow.h"
 #include "selectdevice/selectsupporteddevice.h"
+#include "selectsilent/deviceservice.h"
 
 // OpenGL setup
 #include "glscope.h"
@@ -54,7 +55,6 @@
 #endif
 #include "OH_VERSION.h"
 
-
 using namespace Hantek;
 
 /// \brief Initialize the device with the current settings.
@@ -62,7 +62,7 @@ void applySettingsToDevice(HantekDsoControl *dsoControl, DsoSettingsScope *scope
                            const Dso::ControlSpecification *spec) {
     bool mathUsed = scope->anyUsed(spec->channels);
     for (ChannelID channel = 0; channel < spec->channels; ++channel) {
-        dsoControl->setProbe( channel, scope->voltage[channel].probeUsed, scope->voltage[channel].probeAttn );
+        dsoControl->setProbe(channel, scope->voltage[channel].probeUsed, scope->voltage[channel].probeAttn);
         dsoControl->setGain(channel, scope->gain(channel) * DIVS_VOLTAGE);
         dsoControl->setTriggerLevel(channel, scope->voltage[channel].trigger);
         dsoControl->setChannelUsed(channel, mathUsed | scope->anyUsed(channel));
@@ -90,15 +90,25 @@ int main(int argc, char *argv[]) {
 #endif
 
     bool useGLES = false;
+    bool useFirstDevice = false;
+
     {
         QCoreApplication parserApp(argc, argv);
+
         QCommandLineParser p;
         p.addHelpOption();
         p.addVersionOption();
+
         QCommandLineOption useGlesOption("useGLES", QCoreApplication::tr("Use OpenGL ES instead of OpenGL"));
         p.addOption(useGlesOption);
+
+        QCommandLineOption useFirstDeviceOption(
+            "any-device", QCoreApplication::tr("Use the first device that becomes available on USB"));
+        p.addOption(useFirstDeviceOption);
+
         p.process(parserApp);
         useGLES = p.isSet(useGlesOption);
+        useFirstDevice = p.isSet(useFirstDeviceOption);
     }
 
 #ifdef __arm__
@@ -106,7 +116,7 @@ int main(int argc, char *argv[]) {
     useGLES = true;
 #endif
 
-    GlScope::fixOpenGLversion( useGLES ? QSurfaceFormat::OpenGLES : QSurfaceFormat::OpenGL );
+    GlScope::fixOpenGLversion(useGLES ? QSurfaceFormat::OpenGLES : QSurfaceFormat::OpenGL);
 
     QApplication openHantekApplication(argc, argv);
 
@@ -115,15 +125,16 @@ int main(int argc, char *argv[]) {
     // ("Breeze", "Windows", "Fusion")
     // with package qt5-style-plugins
     // ("Breeze", "bb10dark", "bb10bright", "cleanlooks", "gtk2", "cde", "motif", "plastique", "Windows", "Fusion")
-    openHantekApplication.setStyle( QStyleFactory::create( "Fusion" ) ); // smaller widgets allow stacking of all docks
+    openHantekApplication.setStyle(QStyleFactory::create("Fusion")); // smaller widgets allow stacking of all docks
 #endif
 
     //////// Load translations ////////
     QTranslator qtTranslator;
     QTranslator openHantekTranslator;
     if (QLocale::system().name() != "en_US") { // somehow Qt on MacOS uses the german translation for en_US?!
-        if (qtTranslator.load("qt_" + QLocale::system().name(), QLibraryInfo::location(QLibraryInfo::TranslationsPath))) {
-           openHantekApplication.installTranslator(&qtTranslator);
+        if (qtTranslator.load("qt_" + QLocale::system().name(),
+                              QLibraryInfo::location(QLibraryInfo::TranslationsPath))) {
+            openHantekApplication.installTranslator(&qtTranslator);
         }
         if (openHantekTranslator.load(QLocale(), QLatin1String("openhantek"), QLatin1String("_"),
                                       QLatin1String(":/translations"))) {
@@ -138,7 +149,21 @@ int main(int argc, char *argv[]) {
         SelectSupportedDevice().showLibUSBFailedDialogModel(error);
         return -1;
     }
-    std::unique_ptr<USBDevice> device = SelectSupportedDevice().showSelectDeviceModal(context);
+
+    std::unique_ptr<USBDevice> device;
+    if (useFirstDevice) {
+        // Use device service to hang on and wait for device(s). If no device is returned, show the select dialog.
+        DeviceService deviceService(context);
+        device = deviceService.waitForAnyDevice();
+
+        if (!device) {
+            // Show the normal select dialog if no device was selected automatically
+            device = SelectSupportedDevice().showSelectDeviceModal(context);
+        }
+    } else {
+        // Default behavior: Show modal select dialog.
+        device = SelectSupportedDevice().showSelectDeviceModal(context);
+    }
 
     QString errorMessage;
     if (device == nullptr || !device->connectDevice(errorMessage)) {
@@ -215,17 +240,17 @@ int main(int argc, char *argv[]) {
 
     // wait 2 * record time (delay is ms) for dso to finish
     unsigned waitForDso = 2000 * dsoControl.getSamplesize() / dsoControl.getSamplerate();
-    if ( waitForDso < 10000 ) // minimum 10 s
+    if (waitForDso < 10000) // minimum 10 s
         waitForDso = 10000;
     dsoControlThread.quit();
-    dsoControlThread.wait( waitForDso );
+    dsoControlThread.wait(waitForDso);
 
     postProcessingThread.quit();
     postProcessingThread.wait(10000);
 
-    if (context && device != nullptr) { 
-        device.reset(); // causes libusb_close(), which must be called before libusb_exit() 
-        libusb_exit(context); 
+    if (context && device != nullptr) {
+        device.reset(); // causes libusb_close(), which must be called before libusb_exit()
+        libusb_exit(context);
     }
 
     return res;
