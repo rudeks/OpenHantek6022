@@ -19,18 +19,20 @@ DeviceService::DeviceService(libusb_context *pContext) : QThread(nullptr), m_pUS
 
 DeviceService::~DeviceService() { delete m_pFindDevices; }
 
-std::unique_ptr<USBDevice> DeviceService::waitForAnyDevice() {
+std::unique_ptr<USBDevice> DeviceService::waitForAnyDevice(int nTimeout) {
     start();
 
     UniqueUSBid takeDeviceID = 0L;
     connect(this, &DeviceService::deviceReady, [&](const QString &, UniqueUSBid id) { takeDeviceID = id; });
+
+    if (nTimeout > -1)
+        QTimer::singleShot(nTimeout, this, &QThread::quit);
 
     wait();
 
     // takeDeviceID is still 0L, the thread was ended, probably with an error. Device can not be selected for
     // operation. Users may connect to the uploadFirmwareError() signal to get to know what's wrong.
     if (takeDeviceID == 0L) return std::unique_ptr<USBDevice>();
-
 
     // Taking device with the ID that was signalled by the deviceReady signal
     return m_pFindDevices->takeDevice(takeDeviceID);
@@ -40,7 +42,7 @@ void DeviceService::run() {
     qDebug() << "DeviceService thread started";
 
     QTimer updateTimer;
-    updateTimer.setInterval(2000);
+    updateTimer.setInterval(1000);
     updateTimer.start();
     // Direct connection to use the thread's event loop. Alternatively, this object could be moved to the new thread.
     connect(&updateTimer, &QTimer::timeout, this, &DeviceService::reScanDevices, Qt::DirectConnection);

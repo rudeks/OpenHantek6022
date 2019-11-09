@@ -152,9 +152,11 @@ int main(int argc, char *argv[]) {
 
     std::unique_ptr<USBDevice> device;
     if (useFirstDevice) {
+
         // Use device service to hang on and wait for device(s). If no device is returned, show the select dialog.
         DeviceService deviceService(context);
-        device = deviceService.waitForAnyDevice();
+        device =
+            deviceService.waitForAnyDevice(30); // Wait 30 seconds and then fallback to the well-known select dialog
 
         if (!device) {
             // Show the normal select dialog if no device was selected automatically

@@ -44,7 +44,7 @@ class DeviceService : public QThread {
     explicit DeviceService(libusb_context *pContext);
     virtual ~DeviceService() override;
 
-    std::unique_ptr<USBDevice> waitForAnyDevice();
+    std::unique_ptr<USBDevice> waitForAnyDevice(int nTimeout = -1);
 
   private:
     const QList<DeviceMeta> &processDevices();
