@@ -46,6 +46,7 @@
 #include "mainwindow.h"
 #include "selectdevice/selectsupporteddevice.h"
 #include "selectsilent/deviceservice.h"
+#include "selectsilent/deviceservicedialog.h"
 
 // OpenGL setup
 #include "glscope.h"
@@ -161,8 +162,29 @@ int main(int argc, char *argv[]) {
     if (useFirstDevice) {
         // Use device service to hang on and wait for device(s). If no device is returned, show the select dialog.
         DeviceService deviceService(context);
-        device =
-            deviceService.waitForAnyDevice(waitForDeviceTimeout); // Wait 30 seconds and then fallback to the well-known select dialog
+        deviceService.setScanTimeout(waitForDeviceTimeout);
+
+        /*device =
+            deviceService.waitForAnyDevice(waitForDeviceTimeout); */ // Wait 30 seconds and then fallback to the well-known select dialog
+
+        DeviceServiceDialog deviceServiceDialog;
+
+        QObject::connect(&deviceService, &DeviceService::devices, &deviceServiceDialog,
+                         &DeviceServiceDialog::showDevices);
+        QObject::connect(&deviceService, &DeviceService::uploadFirmware, &deviceServiceDialog,
+                         &DeviceServiceDialog::onUploadFirmware);
+        QObject::connect(&deviceService, &DeviceService::uploadFirmwareError, &deviceServiceDialog,
+                         &DeviceServiceDialog::onUploadFirmwareError);
+        QObject::connect(&deviceService, &DeviceService::deviceReady, &deviceServiceDialog,
+                         &DeviceServiceDialog::onDeviceReady);
+
+        QObject::connect(&deviceService, &DeviceService::timeout, &deviceServiceDialog, &DeviceServiceDialog::reject);
+
+        deviceService.start();
+
+        deviceServiceDialog.exec();
+
+        device = deviceService.acceptDevice(deviceServiceDialog.acceptedDeviceId());
 
         if (!device) {
             // Show the normal select dialog if no device was selected automatically
