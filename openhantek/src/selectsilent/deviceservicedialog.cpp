@@ -11,6 +11,8 @@ DeviceServiceDialog::DeviceServiceDialog(QWidget *parent) : QDialog(parent), ui(
     ui->labelError->hide();
     m_id = 0L;
 
+    connect(ui->buttonBox, &QDialogButtonBox::rejected, this, &QDialog::reject);
+
     setStatus(WAITING_TEXT);
 }
 
