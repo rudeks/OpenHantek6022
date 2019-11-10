@@ -8,6 +8,26 @@
 
 class FindDevices;
 
+class DeviceMeta {
+    friend class DeviceService;
+    friend QDebug operator<<(QDebug dbg, const DeviceMeta &c);
+
+  private:
+    UniqueUSBid m_nID;
+    QString m_name;
+    QString m_errorMessage;
+    bool m_bNeedsFirmware;
+    bool m_bCanConnect;
+
+  public:
+    const QString &name() const { return m_name; }
+    const QString &errorMessage() const { return m_errorMessage; }
+    UniqueUSBid id() const { return m_nID; }
+    bool isReady() const { return m_bCanConnect && !m_bNeedsFirmware; }
+};
+
+QDebug operator<<(QDebug dbg, const DeviceMeta &c);
+
 /**
  * @brief The DeviceService class can be used to periodically scan for devices without the need of a user interface.
  *
@@ -19,6 +39,7 @@ class FindDevices;
  * It is derived from QThread and has its own event loop. Therefore, the device scanner can
  * be used, before the main event loop is started.
  *
+ * Connect to QThread::started() and QThread::finished() if you want to know when the thread starts and finishes.
  *
  */
 class DeviceService : public QThread {
@@ -26,25 +47,23 @@ class DeviceService : public QThread {
     Q_DISABLE_COPY(DeviceService)
 
   private:
-    class DeviceMeta {
-        friend class DeviceService;
-        friend QDebug operator<<(QDebug dbg, const DeviceService::DeviceMeta &c);
+    static const int METATYPE_ID_UNIQUEUSBID;
+    static const int METATYPE_ID_DEVICEMETA;
+    static const int METATYPE_ID_DEVICEMETALIST;
 
-      private:
-        UniqueUSBid id;
-        QString name;
-        QString errorMessage;
-        bool needsFirmware;
-        bool canConnect;
-    };
-
-    friend QDebug operator<<(QDebug dbg, const DeviceService::DeviceMeta &c);
+  public:
+    friend QDebug operator<<(QDebug dbg, const DeviceMeta &c);
 
   public:
     explicit DeviceService(libusb_context *pContext);
     virtual ~DeviceService() override;
 
     std::unique_ptr<USBDevice> waitForAnyDevice(int nTimeout = -1);
+
+    std::unique_ptr<USBDevice> acceptDevice(UniqueUSBid id);
+
+    void setScanTimeout(int nTimeout);
+    int scanTimeout() const;
 
   private:
     const QList<DeviceMeta> &processDevices();
@@ -53,9 +72,36 @@ class DeviceService : public QThread {
     void run() override;
 
   signals:
+    /**
+     * @brief devices is emitted as soon as device list changes
+     * @param devices
+     */
     void devices(const QList<DeviceMeta> &devices);
+
+    /**
+     * @brief uploadFirmware is emitted when the firmware upload was triggered
+     * @param name
+     */
+    void uploadFirmware(const QString &name);
+
+    /**
+     * @brief uploadFirmwareError is emitted when uploading firmware fails
+     * @param name
+     * @param error
+     */
     void uploadFirmwareError(const QString &name, const QString &error);
+
+    /**
+     * @brief deviceReady is emitted if a device becomes ready for use
+     * @param name
+     * @param id
+     */
     void deviceReady(const QString &name, UniqueUSBid id);
+
+    /**
+     * @brief timeout if a timeout is set up and it is hit, this event is emitted before the thread exits.
+     */
+    void timeout();
 
   public slots:
 
@@ -70,7 +116,5 @@ class DeviceService : public QThread {
 
     int m_nTimeout;
 };
-
-QDebug operator<<(QDebug dbg, const DeviceService::DeviceMeta &c);
 
 #endif // DEVICESERVICE_H
